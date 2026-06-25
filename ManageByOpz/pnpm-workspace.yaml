@@ -1,0 +1,10 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  core-js: true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - framer-motion@12.42.0
+  - motion-dom@12.42.0
+  - motion@12.42.0

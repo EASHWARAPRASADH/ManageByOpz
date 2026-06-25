@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "skipLibCheck": true,
+    "paths": {
+      "@/types": ["./src/features/ticketing/types"],
+      "@/types/*": ["./src/features/ticketing/types/*"],
+      "@/lib/*": ["./src/features/ticketing/lib/*"],
+      "@/components/*": ["./src/features/ticketing/components/*"],
+      "@/contexts/*": ["./src/features/ticketing/contexts/*"],
+      "@/hooks/*": ["./src/features/ticketing/hooks/*"],
+      "@/pages/*": ["./src/features/ticketing/pages/*"],
+      "@/*": ["./src/*"]
+    },
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "erasableSyntaxOnly": false,
+    "noFallthroughCasesInSwitch": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false
+  },
+  "include": ["src"]
+}

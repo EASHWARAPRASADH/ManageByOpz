@@ -1,0 +1,113 @@
+# ══════════════════════════════════════════════════════════════
+# ManageMyOpz HR Platform — Application Configuration
+# ══════════════════════════════════════════════════════════════
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: managemyopz-enterprise
+
+  # ── Database ──────────────────────────────────────────────
+  datasource:
+    url: jdbc:mysql://localhost:3306/managemyopz_hr?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true
+    username: root
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+
+  # ── JPA / Hibernate ──────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+        generate_statistics: false
+
+  # ── Flyway ──────────────────────────────────────────────
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    validate-on-migrate: false
+    placeholder-replacement: false
+
+  # ── Jackson ──────────────────────────────────────────────
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+
+  # ── Mail (Notification Platform) ──────────────────────────
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# ── Server ──────────────────────────────────────────────────
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+# ── Platform Configuration ──────────────────────────────────
+platform:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciBIUyA1MTIgYWxnb3JpdGhtIHRoYXQgbmVlZHMgdG8gYmUgYXQgbGVhc3QgNjQgYnl0ZXMgbG9uZw==}
+      # ADR-002: 15-minute access token — short window limits XSS damage
+      expiration: 900000
+      # 7-day refresh token lives in HttpOnly Secure cookie only
+      refresh-expiration: 604800000
+    cors:
+      # Extend with comma-separated origins for staging/prod via env var
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000,http://localhost:4173}
+    # BCrypt cost factor — minimum 12 (ENTERPRISE_STANDARD §7)
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+    # Account lockout threshold
+    max-failed-attempts: ${MAX_FAILED_ATTEMPTS:5}
+    lockout-duration-minutes: ${LOCKOUT_DURATION_MINUTES:30}
+
+# ── Actuator ──────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ── Logging ──────────────────────────────────────────────
+logging:
+  level:
+    com.managemyopz: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.security: WARN
+  pattern:
+    # Includes: timestamp [thread] [requestId] [tenantId] level logger - message
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{requestId}] [%X{tenantId}] %-5level %logger{36} - %msg%n"
+    file:    "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{requestId}] [%X{tenantId}] [%X{userId}] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/managemyopz-enterprise.log

@@ -1,0 +1,19 @@
+{
+  "name": "managemyopz-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ManageByOpz Enterprise Monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.4"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

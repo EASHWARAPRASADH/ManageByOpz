@@ -1,0 +1,2 @@
+-- V9: Drop obsolete last_sequence column from employee_code_sequences (already dropped/recreated in V7, so no-op)
+-- ALTER TABLE employee_code_sequences DROP COLUMN last_sequence;

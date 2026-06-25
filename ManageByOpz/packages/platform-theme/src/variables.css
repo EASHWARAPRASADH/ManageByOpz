@@ -1,0 +1,134 @@
+/*
+ * ManageByOpz Enterprise Design System
+ * CSS Custom Properties (Design Tokens)
+ *
+ * Import this file in your app's main entry CSS:
+ *   @import '@managemyopz/platform-theme/variables.css';
+ *
+ * Or link via index.css:
+ *   import '@managemyopz/platform-theme/src/variables.css';
+ */
+
+:root {
+  /* ─── Brand ─── */
+  --color-primary: #5D69F4;
+  --color-primary-hover: #4C58E3;
+  --color-primary-light: rgba(93, 105, 244, 0.10);
+  --color-primary-shadow: rgba(93, 105, 244, 0.25);
+
+  /* ─── Semantic colors ─── */
+  --color-success: #10B981;
+  --color-success-light: rgba(16, 185, 129, 0.10);
+  --color-warning: #F59E0B;
+  --color-warning-light: rgba(245, 158, 11, 0.10);
+  --color-danger: #F43F5E;
+  --color-danger-light: rgba(244, 63, 94, 0.10);
+  --color-info: #3B82F6;
+  --color-info-light: rgba(59, 130, 246, 0.10);
+
+  /* ─── Neutral palette ─── */
+  --color-bg: #F3F7FA;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #FFFFFF;
+  --color-border: #E2E8F0;
+  --color-border-subtle: rgba(226, 232, 240, 0.60);
+
+  --color-text: #1E293B;
+  --color-text-secondary: #64748B;
+  --color-text-muted: #94A3B8;
+
+  /* ─── Layout ─── */
+  --layout-sidebar-width: 280px;
+  --layout-sidebar-collapsed-width: 72px;
+  --layout-header-height: 64px;
+
+  /* ─── Typography ─── */
+  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  /* ─── Radius ─── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* ─── Shadows ─── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.10);
+  --shadow-xl: 0 8px 40px rgba(0, 0, 0, 0.12);
+  --shadow-primary: 0 4px 12px rgba(93, 105, 244, 0.25);
+
+  /* ─── Animation ─── */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ─── Z-index ─── */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-overlay: 1040;
+  --z-modal: 1050;
+  --z-toast: 1060;
+  --z-tooltip: 1070;
+}
+
+/* ─── Dark theme overrides ─── */
+.dark {
+  --color-bg: #07090E;
+  --color-surface: #0B0F19;
+  --color-surface-raised: #0E1321;
+  --color-border: #1E293B;
+  --color-border-subtle: rgba(30, 41, 59, 0.80);
+
+  --color-text: #F1F5F9;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #475569;
+}
+
+/* ─── Global base styles ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-family-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* ─── Focus ring ─── */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ─── Selection ─── */
+::selection {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}

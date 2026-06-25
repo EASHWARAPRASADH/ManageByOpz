@@ -1,22 +1,27 @@
-node_modules
-dist
-.env
-*.db
-*.sqlite
-.DS_Store
-*.log
-.gemini
-tmp
-scratch
-demo-mysql-1
-nexus-demo
-public/captures
-public/uploads
-*.sqlite-shm
-*.sqlite-wal
-.temp/
-connectit_db_backup_utf8.sql
-maven/
-database_viewer.html
-generate_db_viewer.cjs
+# Dependencies
+node_modules/
+.pnpm-store/
 
+# Production builds
+dist/
+build/
+target/
+out/
+
+# Turborepo
+.turbo/
+
+# Environment variables & local configuration
+.env
+.env.local
+.env.*.local
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@import "@managemyopz/platform-theme/src/variables.css";
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family-sans);
+  min-height: 100vh;
+}
