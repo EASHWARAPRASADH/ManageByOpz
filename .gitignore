@@ -1,0 +1,17 @@
+# Local Maven Tool Distribution
+apache-maven-*/
+target/
+node_modules/
+dist/
+.idea/
+.vscode/
+*.log
+brain/
+.gemini/
+*.suo
+.DS_Store
+tmp/
+temp/
+scratch/
+.env
+*.local

@@ -1,0 +1,1953 @@
+﻿diff --git a/hrms-platform/frontend/src/features/employees/EmployeeDirectory.tsx b/hrms-platform/frontend/src/features/employees/EmployeeDirectory.tsx
+index d18e8d1..d6e2ac6 100644
+--- a/hrms-platform/frontend/src/features/employees/EmployeeDirectory.tsx
++++ b/hrms-platform/frontend/src/features/employees/EmployeeDirectory.tsx
+@@ -1,39 +1,60 @@
+-import { useState } from 'react';
++import { useState, useEffect } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import { useAppSelector } from '../../app/hooks';
++import { PhoneInput } from './PhoneInput';
++import { DatePicker } from './DatePicker';
++import { useAppSelector, useAppDispatch } from '../../app/hooks';
++import {
++  setSearchTerm,
++  setStatusFilter,
++  setLocationFilter,
++  setDeptFilter,
++  setTypeFilter,
++  setSortBy,
++  setCurrentPage,
++  resetFilters
++} from './employeesSlice';
+ import { UserAccountTab } from './UserAccountTab';
+-import { 
++import {
+   Search, SlidersHorizontal, MapPin, Building, ShieldCheck, Shield,
+   Award, FileText, Network, Clock, Plus, Edit2, Key, CheckCircle,
+-  Mail, Briefcase, AlertCircle, Eye, EyeOff, LayoutGrid, List, 
+-  FileSpreadsheet, Trash2, Calendar, UserPlus, LogOut, CheckCircle2, 
++  Mail, Briefcase, AlertCircle, Eye, EyeOff, LayoutGrid, List,
++  FileSpreadsheet, Trash2, Calendar, UserPlus, LogOut, CheckCircle2,
+   ChevronRight, User, Trash, Users, ArrowLeft, PlusCircle, ShieldAlert,
+   GraduationCap, BriefcaseIcon, FileWarning, HelpCircle,
+-  Copy, ArrowUp, UserMinus, ArrowLeftRight, Activity
++  Copy, ArrowUp, UserMinus, ArrowLeftRight, Activity,
++  Loader2, ChevronDown
+ } from 'lucide-react';
+-import { 
+-  useGetEmployeesQuery, 
++import {
++  useGetEmployeesQuery,
+   useUpdateEmployeeMutation,
+   useTransferEmployeeMutation,
+   usePromoteEmployeeMutation,
+   useChangeManagerMutation,
+   useTerminateEmployeeMutation,
++  useArchiveEmployeeMutation,
++  useRestoreEmployeeMutation,
++  useBulkArchiveEmployeesMutation,
++  useBulkReassignManagerMutation,
++  useBulkTerminateEmployeesMutation,
++  useDeleteEmployeeMutation,
+   useGetCompletionScoreQuery
+ } from './employeesApi';
+-import { 
+-  useGetOrganizationsQuery, 
+-  useGetBusinessUnitsQuery, 
+-  useGetDivisionsQuery, 
+-  useGetDepartmentsQuery, 
+-  useGetLocationsQuery, 
+-  useGetGradesQuery, 
++import { useHasPermission } from '../auth/RoleGuard';
++import {
++  useGetOrganizationsQuery,
++  useGetBusinessUnitsQuery,
++  useGetDivisionsQuery,
++  useGetDepartmentsQuery,
++  useGetLocationsQuery,
++  useGetGradesQuery,
+   useGetBandsQuery,
+   useGetDesignationsQuery
+ } from '../org-dna/orgDnaApi';
+ 
+ export function EmployeeDirectory() {
+   const navigate = useNavigate();
+-  const { data: liveEmployees, isLoading, error, refetch } = useGetEmployeesQuery();
++  const [showArchived, setShowArchived] = useState(false);
++  const { data: liveEmployees, isLoading, error, refetch } = useGetEmployeesQuery(showArchived);
+ 
+   const calculateTenure = (dojStr: string) => {
+     if (!dojStr) return "0 Years, 0 Months";
+@@ -62,44 +83,82 @@ export function EmployeeDirectory() {
+       return '2026-09-20';
+     }
+   };
+-  
++
+   // State variables
++  const dispatch = useAppDispatch();
+   const currentUser = useAppSelector((state) => state.auth.user);
++  const {
++    searchTerm,
++    statusFilter,
++    locationFilter,
++    deptFilter,
++    typeFilter,
++    sortBy,
++    currentPage
++  } = useAppSelector((state) => state.employees);
++
+   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
+-  const [searchTerm, setSearchTerm] = useState('');
+   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+   const [maskSensitive, setMaskSensitive] = useState(true);
++  const isMasked = maskSensitive || !(currentUser && ['ROLE_ULTRA_SUPER_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_ADMIN'].includes(currentUser.role));
+   const [activeTab, setActiveTab] = useState<'overview' | 'identity' | 'dna' | 'skills' | 'certs' | 'docs' | 'relations' | 'timeline' | 'audit' | 'account'>('overview');
+-  
+-  // Filter states
+-  const [statusFilter, setStatusFilter] = useState('');
+-  const [locationFilter, setLocationFilter] = useState('');
+-  const [deptFilter, setDeptFilter] = useState('');
+-  const [typeFilter, setTypeFilter] = useState('');
+-  const [sortBy, setSortBy] = useState('name');
+-  
+-  // Pagination
+-  const [currentPage, setCurrentPage] = useState(1);
+   const itemsPerPage = 6;
+-  
++
+   // Bulk selection
+   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+-  
++
++  // Export States
++  const [showExportDropdown, setShowExportDropdown] = useState(false);
++  const [showBulkExportDropdown, setShowBulkExportDropdown] = useState(false);
++  const [isExporting, setIsExporting] = useState(false);
++  const token = useAppSelector((state) => state.auth.accessToken);
++  const tenantId = useAppSelector((state) => state.auth.tenant);
++
++  // Click outside handler for both export dropdowns
++  useEffect(() => {
++    const handleOutsideClick = (e: MouseEvent) => {
++      const target = e.target as HTMLElement;
++      if (!target.closest('.export-dropdown-container')) {
++        setShowExportDropdown(false);
++      }
++      if (!target.closest('.bulk-export-dropdown-container')) {
++        setShowBulkExportDropdown(false);
++      }
++    };
++    document.addEventListener('mousedown', handleOutsideClick);
++    return () => document.removeEventListener('mousedown', handleOutsideClick);
++  }, []);
++
+   // Modals state
+-  const [activeModal, setActiveModal] = useState<'transfer' | 'promote' | 'manager' | 'terminate' | 'editIdentity' | 'addSkill' | 'addCert' | 'addDoc' | 'addRelation' | 'none'>('none');
+-  
++  const [activeModal, setActiveModal] = useState<'transfer' | 'promote' | 'manager' | 'terminate' | 'archive' | 'restore' | 'bulkArchive' | 'bulkReassignManager' | 'bulkTerminate' | 'delete' | 'editIdentity' | 'addSkill' | 'addCert' | 'addDoc' | 'addRelation' | 'none'>('none');
++
+   // Form states
+   const [transferDept, setTransferDept] = useState('');
+   const [transferLoc, setTransferLoc] = useState('');
+-  
++
+   const [promoteDesignation, setPromoteDesignation] = useState('');
+   const [promoteGrade, setPromoteGrade] = useState('');
+-  
++
+   const [newManagerId, setNewManagerId] = useState('');
+-  
++
+   const [terminateDate, setTerminateDate] = useState('');
+   const [terminateReason, setTerminateReason] = useState('');
+-  
++
++  const [archiveReason, setArchiveReason] = useState('');
++  const [bulkArchiveReason, setBulkArchiveReason] = useState('');
++
++  // Bulk reassign manager states
++  const [bulkManagerId, setBulkManagerId] = useState('');
++  const [bulkManagerEffectiveDate, setBulkManagerEffectiveDate] = useState('');
++  const [bulkManagerReason, setBulkManagerReason] = useState('');
++  const [bulkManagerError, setBulkManagerError] = useState('');
++
++  // Bulk terminate states
++  const [bulkTerminateDate, setBulkTerminateDate] = useState('');
++  const [bulkFinalWorkingDay, setBulkFinalWorkingDay] = useState('');
++  const [bulkTerminateReason, setBulkTerminateReason] = useState('');
++  const [bulkTerminateError, setBulkTerminateError] = useState('');
++
+   // Skills / Certs / Docs Form states
+   const [newSkillName, setNewSkillName] = useState('');
+   const [newSkillCategory, setNewSkillCategory] = useState<'TECHNICAL' | 'FUNCTIONAL' | 'SOFT' | 'LANGUAGE'>('TECHNICAL');
+@@ -135,6 +194,9 @@ export function EmployeeDirectory() {
+   const [editPersonalEmail, setEditPersonalEmail] = useState('');
+   const [editWorkPhone, setEditWorkPhone] = useState('');
+   const [editPersonalPhone, setEditPersonalPhone] = useState('');
++  const [editWorkPhoneError, setEditWorkPhoneError] = useState<string | null>(null);
++  const [editPersonalPhoneError, setEditPersonalPhoneError] = useState<string | null>(null);
++  const [editEmergencyPhoneError, setEditEmergencyPhoneError] = useState<string | null>(null);
+   const [editCurrentAddress, setEditCurrentAddress] = useState('');
+   const [editPermanentAddress, setEditPermanentAddress] = useState('');
+   const [editEmergencyName, setEditEmergencyName] = useState('');
+@@ -149,7 +211,7 @@ export function EmployeeDirectory() {
+   const { data: allGrades } = useGetGradesQuery(activeOrgId, { skip: !activeOrgId });
+   const { data: allBands } = useGetBandsQuery(activeOrgId, { skip: !activeOrgId });
+   const { data: allDesignations } = useGetDesignationsQuery(activeOrgId, { skip: !activeOrgId });
+-  
++
+   // Eager child DNA endpoints scoped to employee selection
+   const { data: employeeDivs } = useGetDivisionsQuery(selectedEmployee?.businessUnitId || '', { skip: !selectedEmployee?.businessUnitId });
+   const { data: employeeDepts } = useGetDepartmentsQuery(selectedEmployee?.divisionId || '', { skip: !selectedEmployee?.divisionId });
+@@ -163,6 +225,20 @@ export function EmployeeDirectory() {
+   const [promoteEmployee] = usePromoteEmployeeMutation();
+   const [changeManager] = useChangeManagerMutation();
+   const [terminateEmployee] = useTerminateEmployeeMutation();
++  const [archiveEmployee] = useArchiveEmployeeMutation();
++  const [restoreEmployee] = useRestoreEmployeeMutation();
++  const [bulkArchiveEmployees] = useBulkArchiveEmployeesMutation();
++  const [bulkReassignManager, { isLoading: isReassigning }] = useBulkReassignManagerMutation();
++  const [bulkTerminateEmployees, { isLoading: isTerminating }] = useBulkTerminateEmployeesMutation();
++  const [deleteEmployee] = useDeleteEmployeeMutation();
++
++  // Permissions
++  const canView = useHasPermission('EMPLOYEE_VIEW');
++  const canEdit = useHasPermission('EMPLOYEE_EDIT');
++  const canTerminate = useHasPermission('EMPLOYEE_TERMINATE');
++  const canArchive = useHasPermission('EMPLOYEE_ARCHIVE');
++  const canRestore = useHasPermission('EMPLOYEE_RESTORE');
++  const canPerformBulk = currentUser && ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_ULTRA_SUPER_ADMIN'].includes(currentUser.role);
+ 
+   // Toast notification state
+   const [toastMessage, setToastMessage] = useState<string | null>(null);
+@@ -208,12 +284,12 @@ export function EmployeeDirectory() {
+ 
+   // Filtering, sorting and search
+   const filteredEmployees = employees.filter(emp => {
+-    const matchesSearch = 
++    const matchesSearch =
+       emp.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       emp.employeeCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       emp.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       emp.designation.toLowerCase().includes(searchTerm.toLowerCase());
+-    
++
+     const matchesStatus = statusFilter ? emp.employmentStatus === statusFilter : true;
+     const matchesLocation = locationFilter ? emp.locationId === locationFilter : true;
+     const matchesDept = deptFilter ? emp.departmentId === deptFilter : true;
+@@ -242,7 +318,7 @@ export function EmployeeDirectory() {
+   const currentEmployees = sortedEmployees.slice(indexOfFirstItem, indexOfLastItem);
+ 
+   const handlePageChange = (page: number) => {
+-    setCurrentPage(page);
++    dispatch(setCurrentPage(page));
+   };
+ 
+   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+@@ -261,66 +337,148 @@ export function EmployeeDirectory() {
+     }
+   };
+ 
+-  // Export CSV Action
+-  const exportToCSV = (listToExport = sortedEmployees) => {
+-    if (listToExport.length === 0) return;
+-    const headers = ['Employee Code', 'Full Name', 'Work Email', 'Department', 'Location', 'Designation', 'Joining Date', 'Status'];
+-    const rows = listToExport.map(emp => [
+-      emp.employeeCode,
+-      emp.displayName,
+-      emp.workEmail,
+-      emp.department,
+-      emp.location,
+-      emp.designation,
+-      emp.dateOfJoining || 'N/A',
+-      emp.employmentStatus
+-    ]);
+-
+-    const csvContent = "data:text/csv;charset=utf-8," 
+-      + [headers.join(','), ...rows.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
+-    
+-    const encodedUri = encodeURI(csvContent);
+-    const link = document.createElement("a");
+-    link.setAttribute("href", encodedUri);
+-    link.setAttribute("download", `Employee_Twins_Export_${new Date().toISOString().split('T')[0]}.csv`);
+-    document.body.appendChild(link);
+-    link.click();
+-    document.body.removeChild(link);
+-    triggerToast("Employee list exported to CSV successfully.");
++  // Export trigger action (CSV, Excel, PDF)
++  const triggerExport = async (format: 'csv' | 'excel' | 'pdf', scope: 'filtered' | 'selected' | 'all') => {
++    setIsExporting(true);
++    setShowExportDropdown(false);
++    try {
++      const params = new URLSearchParams();
++
++      if (scope === 'selected') {
++        selectedIds.forEach(id => params.append('ids', id));
++      } else if (scope === 'filtered') {
++        if (searchTerm) params.append('search', searchTerm);
++        if (statusFilter) params.append('status', statusFilter);
++        if (locationFilter) params.append('locationId', locationFilter);
++        if (deptFilter) params.append('departmentId', deptFilter);
++        if (typeFilter) params.append('employmentTypeId', typeFilter);
++        if (sortBy) params.append('sortBy', sortBy);
++        params.append('showArchived', showArchived.toString());
++      } else {
++        // all
++        params.append('showArchived', showArchived.toString());
++      }
++
++      const response = await fetch(`/api/v1/employees/export/${format}?${params.toString()}`, {
++        method: 'GET',
++        headers: {
++          'Authorization': `Bearer ${token}`,
++          'X-Tenant-ID': tenantId || 'default',
++        }
++      });
++
++      if (!response.ok) {
++        throw new Error('Export failed');
++      }
++
++      const blob = await response.blob();
++      const extension = format === 'excel' ? 'xlsx' : format;
++      const filename = `employees_${new Date().toISOString().split('T')[0]}.${extension}`;
++      
++      const link = document.createElement("a");
++      link.href = window.URL.createObjectURL(blob);
++      link.setAttribute("download", filename);
++      document.body.appendChild(link);
++      link.click();
++      document.body.removeChild(link);
++      
++      triggerToast(`Employees exported to ${format.toUpperCase()} successfully.`);
++    } catch (error) {
++      console.error(error);
++      triggerToast("Failed to export employees. Please try again.");
++    } finally {
++      setIsExporting(false);
++    }
+   };
+ 
+   // Bulk actions
+-  const handleBulkTerminate = async () => {
++  const handleBulkTerminate = () => {
+     if (selectedIds.length === 0) return;
+-    if (confirm(`Are you sure you want to bulk terminate the ${selectedIds.length} selected employees?`)) {
+-      try {
+-        for (const id of selectedIds) {
+-          await terminateEmployee({ id, exitDate: new Date().toISOString().split('T')[0], reason: 'Bulk termination action' }).unwrap();
+-        }
+-        setSelectedIds([]);
+-        refetch();
+-        triggerToast("Bulk termination operation completed.");
+-      } catch (err) {
+-        console.error(err);
+-        triggerToast("Failed to complete bulk termination.");
+-      }
++    setBulkTerminateDate('');
++    setBulkFinalWorkingDay('');
++    setBulkTerminateReason('');
++    setBulkTerminateError('');
++    setActiveModal('bulkTerminate');
++  };
++
++  const handleBulkChangeManager = () => {
++    if (selectedIds.length === 0) return;
++    setBulkManagerId('');
++    setBulkManagerEffectiveDate('');
++    setBulkManagerReason('');
++    setBulkManagerError('');
++    setActiveModal('bulkReassignManager');
++  };
++
++  const submitBulkTerminate = async () => {
++    if (selectedIds.length === 0) return;
++    if (!bulkTerminateDate) {
++      setBulkTerminateError('Termination Date is required.');
++      return;
++    }
++    if (!bulkFinalWorkingDay) {
++      setBulkTerminateError('Final Working Day is required.');
++      return;
++    }
++    if (!bulkTerminateReason || !bulkTerminateReason.trim()) {
++      setBulkTerminateError('Termination Reason is required.');
++      return;
++    }
++
++    try {
++      setBulkTerminateError('');
++      await bulkTerminateEmployees({
++        employeeIds: selectedIds,
++        terminationDate: bulkTerminateDate,
++        finalWorkingDay: bulkFinalWorkingDay,
++        reason: bulkTerminateReason
++      }).unwrap();
++
++      setSelectedIds([]);
++      setActiveModal('none');
++      refetch();
++      triggerToast(`Successfully terminated the selected employees.`);
++    } catch (err: any) {
++      console.error(err);
++      setBulkTerminateError(err?.data?.message || 'Failed to bulk terminate selected employees.');
+     }
+   };
+ 
+-  const handleBulkChangeManager = async () => {
++  const submitBulkReassignManager = async () => {
+     if (selectedIds.length === 0) return;
+-    const mgrId = prompt("Enter the New Manager Employee UUID:");
+-    if (!mgrId) return;
++    if (!bulkManagerId) {
++      setBulkManagerError('Please select a manager.');
++      return;
++    }
++    if (!bulkManagerEffectiveDate) {
++      setBulkManagerError('Effective Date is required.');
++      return;
++    }
++    if (!bulkManagerReason || !bulkManagerReason.trim()) {
++      setBulkManagerError('Reason is required.');
++      return;
++    }
++    if (selectedIds.includes(bulkManagerId)) {
++      setBulkManagerError('An employee cannot report to themselves.');
++      return;
++    }
++
+     try {
+-      for (const id of selectedIds) {
+-        await changeManager({ id, managerId: mgrId }).unwrap();
+-      }
++      setBulkManagerError('');
++      await bulkReassignManager({
++        employeeIds: selectedIds,
++        managerId: bulkManagerId,
++        effectiveDate: bulkManagerEffectiveDate,
++        reason: bulkManagerReason
++      }).unwrap();
++
+       setSelectedIds([]);
++      setActiveModal('none');
+       refetch();
+-      triggerToast("Bulk manager change completed.");
+-    } catch (err) {
++      triggerToast(`Successfully reassigned manager for the selected employees.`);
++    } catch (err: any) {
+       console.error(err);
+-      triggerToast("Failed to complete bulk manager change.");
++      setBulkManagerError(err?.data?.message || 'Failed to bulk reassign manager.');
+     }
+   };
+ 
+@@ -404,6 +562,69 @@ export function EmployeeDirectory() {
+     }
+   };
+ 
++  const submitArchive = async () => {
++    if (!selectedEmployee || !archiveReason) return;
++    try {
++      const res = await archiveEmployee({
++        id: selectedEmployee.id,
++        reason: archiveReason
++      }).unwrap();
++      setSelectedEmployee(res);
++      setActiveModal('none');
++      triggerToast("Employee archived successfully.");
++    } catch (err: any) {
++      console.error(err);
++      const errMsg = err?.data?.message || "Failed to archive employee.";
++      triggerToast(errMsg);
++    }
++  };
++
++  const submitRestore = async () => {
++    if (!selectedEmployee) return;
++    try {
++      const res = await restoreEmployee(selectedEmployee.id).unwrap();
++      setSelectedEmployee(res);
++      setActiveModal('none');
++      triggerToast("Employee restored successfully.");
++    } catch (err: any) {
++      console.error(err);
++      const errMsg = err?.data?.message || "Failed to restore employee.";
++      triggerToast(errMsg);
++    }
++  };
++
++  const submitBulkArchive = async () => {
++    if (selectedIds.length === 0 || !bulkArchiveReason) return;
++    try {
++      await bulkArchiveEmployees({
++        ids: selectedIds,
++        reason: bulkArchiveReason
++      }).unwrap();
++      setSelectedIds([]);
++      setActiveModal('none');
++      triggerToast("Selected employees archived successfully.");
++    } catch (err: any) {
++      console.error(err);
++      const errMsg = err?.data?.message || "Failed to bulk archive employees.";
++      triggerToast(errMsg);
++    }
++  };
++
++  const submitDelete = async () => {
++    if (!selectedEmployee) return;
++    if (!confirm("Are you sure you want to permanently delete this digital twin? This action is irreversible.")) return;
++    try {
++      await deleteEmployee(selectedEmployee.id).unwrap();
++      setSelectedEmployee(null);
++      setActiveModal('none');
++      triggerToast("Employee permanently deleted.");
++    } catch (err: any) {
++      console.error(err);
++      const errMsg = err?.data?.message || "Failed to delete employee.";
++      triggerToast(errMsg);
++    }
++  };
++
+   const openEditIdentityModal = () => {
+     setEditFirstName(selectedEmployee.firstName || '');
+     setEditLastName(selectedEmployee.lastName || '');
+@@ -415,19 +636,64 @@ export function EmployeeDirectory() {
+     setEditBloodGroup(selectedEmployee.bloodGroup || '');
+     setEditPreferredLang(selectedEmployee.preferredLanguage || '');
+     setEditPersonalEmail(selectedEmployee.personalEmail || '');
+-    setEditWorkPhone(selectedEmployee.workPhone || '');
+-    setEditPersonalPhone(selectedEmployee.personalPhone || '');
++    const getPhoneStr = (full?: string, cc?: string, num?: string) => {
++      if (full) return full;
++      if (cc && num) return `${cc} ${num}`;
++      return '';
++    };
++    setEditWorkPhone(getPhoneStr(selectedEmployee.workPhone, selectedEmployee.workPhoneCountryCode, selectedEmployee.workPhoneNumber));
++    setEditPersonalPhone(getPhoneStr(selectedEmployee.personalPhone, selectedEmployee.personalPhoneCountryCode, selectedEmployee.personalPhoneNumber));
+     setEditCurrentAddress(selectedEmployee.currentAddress || '');
+     setEditPermanentAddress(selectedEmployee.permanentAddress || '');
+     setEditEmergencyName(selectedEmployee.emergencyContactName || '');
+     setEditEmergencyPhone(selectedEmployee.emergencyContactPhone || '');
+     setEditEmergencyRelation(selectedEmployee.emergencyContactRelation || '');
+-    
++
+     setActiveModal('editIdentity');
+   };
+ 
+   const submitEditIdentity = async () => {
+     try {
++      const parsePhone = (phone?: string) => {
++        if (!phone) return { countryCode: undefined, number: undefined, full: undefined };
++        const val = phone.trim();
++        let countryCode = '+1';
++        let localNumber = val;
++        if (val.startsWith('+')) {
++          const firstSpace = val.indexOf(' ');
++          if (firstSpace > 0) {
++            countryCode = val.substring(0, firstSpace);
++            localNumber = val.substring(firstSpace + 1).trim();
++          } else {
++            if (val.startsWith('+971')) {
++              countryCode = '+971';
++              localNumber = val.substring(4);
++            } else if (val.startsWith('+91')) {
++              countryCode = '+91';
++              localNumber = val.substring(3);
++            } else if (val.startsWith('+44')) {
++              countryCode = '+44';
++              localNumber = val.substring(3);
++            } else if (val.startsWith('+61')) {
++              countryCode = '+61';
++              localNumber = val.substring(3);
++            } else if (val.startsWith('+65')) {
++              countryCode = '+65';
++              localNumber = val.substring(3);
++            } else if (val.startsWith('+1')) {
++              countryCode = '+1';
++              localNumber = val.substring(2);
++            }
++          }
++        }
++        const cleanLocal = localNumber.replace(/\D/g, '');
++        const full = countryCode + cleanLocal;
++        return { countryCode, number: cleanLocal, full };
++      };
++
++      const wp = parsePhone(editWorkPhone);
++      const pp = parsePhone(editPersonalPhone);
++
+       const updatedBody = {
+         ...selectedEmployee,
+         firstName: editFirstName,
+@@ -443,13 +709,19 @@ export function EmployeeDirectory() {
+         personalEmail: editPersonalEmail || undefined,
+         workPhone: editWorkPhone || undefined,
+         personalPhone: editPersonalPhone || undefined,
++        workPhoneCountryCode: wp.countryCode,
++        workPhoneNumber: wp.number,
++        workPhoneFull: wp.full,
++        personalPhoneCountryCode: pp.countryCode,
++        personalPhoneNumber: pp.number,
++        personalPhoneFull: pp.full,
+         currentAddress: editCurrentAddress || undefined,
+         permanentAddress: editPermanentAddress || undefined,
+         emergencyContactName: editEmergencyName || undefined,
+         emergencyContactPhone: editEmergencyPhone || undefined,
+         emergencyContactRelation: editEmergencyRelation || undefined
+       };
+-      
++
+       const res = await updateEmployee({ id: selectedEmployee.id, body: updatedBody }).unwrap();
+       setSelectedEmployee(res);
+       setActiveModal('none');
+@@ -471,13 +743,13 @@ export function EmployeeDirectory() {
+         selfRating: newSkillRating,
+         verified: false
+       };
+-      
++
+       const currentSkills = selectedEmployee.skills || [];
+       const updatedBody = {
+         ...selectedEmployee,
+         skills: [...currentSkills, newSkill]
+       };
+-      
++
+       const res = await updateEmployee({ id: selectedEmployee.id, body: updatedBody }).unwrap();
+       setSelectedEmployee(res);
+       setNewSkillName('');
+@@ -661,7 +933,7 @@ export function EmployeeDirectory() {
+   };
+ 
+   return (
+-    <div className="space-y-6 p-6 max-w-7xl mx-auto text-slate-900 dark:text-white">
++    <div className="space-y-6 p-6 w-full max-w-none text-slate-900 dark:text-white">
+       {/* Toast Alert */}
+       {toastMessage && (
+         <div className="fixed bottom-5 right-5 bg-indigo-650 text-white px-5 py-3 rounded-xl shadow-2xl z-55 flex items-center gap-2 border border-indigo-505 animate-slide-in text-xs font-semibold">
+@@ -681,16 +953,83 @@ export function EmployeeDirectory() {
+                 Single Source of Truth (SSOT) database for all organizational Digital Twins.
+               </p>
+             </div>
+-            
++
+             <div className="flex items-center gap-3">
+-              <button 
+-                onClick={() => exportToCSV()}
+-                className="flex items-center gap-1.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B0F19] hover:bg-slate-50 dark:hover:bg-slate-900 px-4 py-2 rounded-lg text-xs font-bold shadow-sm transition-all active:scale-[0.98]"
++            <div className="flex items-center gap-3 relative export-dropdown-container">
++              <button
++                disabled={isExporting}
++                onClick={() => setShowExportDropdown(!showExportDropdown)}
++                className="flex items-center gap-1.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B0F19] hover:bg-slate-50 dark:hover:bg-[#151D30] px-4 py-2 rounded-lg text-xs font-bold shadow-sm transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" /> Export CSV
++                {isExporting ? (
++                  <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
++                ) : (
++                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
++                )}
++                <span>Export</span>
++                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+               </button>
+-              
+-              <button 
++
++              {showExportDropdown && (
++                <div className="absolute right-0 mt-2 top-full w-60 bg-white dark:bg-[#0B0F19] border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-lg z-50 py-2 text-xs text-slate-700 dark:text-slate-200 animate-slide-in">
++                  <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
++                    Current Filtered ({sortedEmployees.length})
++                  </div>
++                  <button onClick={() => triggerExport('csv', 'filtered')} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                    <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Export CSV
++                  </button>
++                  <button onClick={() => triggerExport('excel', 'filtered')} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                    <FileSpreadsheet className="w-4 h-4 text-indigo-500" /> Export Excel (.xlsx)
++                  </button>
++                  <button onClick={() => triggerExport('pdf', 'filtered')} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                    <FileText className="w-4 h-4 text-rose-500" /> Export PDF
++                  </button>
++
++                  <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
++
++                  <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
++                    Selected ({selectedIds.length})
++                  </div>
++                  <button 
++                    disabled={selectedIds.length === 0}
++                    onClick={() => triggerExport('csv', 'selected')} 
++                    className={`w-full flex items-center gap-2 px-3 py-2 text-left ${selectedIds.length === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-900'}`}
++                  >
++                    <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Export CSV
++                  </button>
++                  <button 
++                    disabled={selectedIds.length === 0}
++                    onClick={() => triggerExport('excel', 'selected')} 
++                    className={`w-full flex items-center gap-2 px-3 py-2 text-left ${selectedIds.length === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-900'}`}
++                  >
++                    <FileSpreadsheet className="w-4 h-4 text-indigo-500" /> Export Excel (.xlsx)
++                  </button>
++                  <button 
++                    disabled={selectedIds.length === 0}
++                    onClick={() => triggerExport('pdf', 'selected')} 
++                    className={`w-full flex items-center gap-2 px-3 py-2 text-left ${selectedIds.length === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-900'}`}
++                  >
++                    <FileText className="w-4 h-4 text-rose-500" /> Export PDF
++                  </button>
++
++                  <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
++
++                  <div className="px-3 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
++                    All Records ({employees.length})
++                  </div>
++                  <button onClick={() => triggerExport('csv', 'all')} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                    <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Export CSV
++                  </button>
++                  <button onClick={() => triggerExport('excel', 'all')} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                    <FileSpreadsheet className="w-4 h-4 text-indigo-500" /> Export Excel (.xlsx)
++                  </button>
++                  <button onClick={() => triggerExport('pdf', 'all')} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                    <FileText className="w-4 h-4 text-rose-500" /> Export PDF
++                  </button>
++                </div>
++              )}
++
++              <button
+                 onClick={() => navigate('/onboarding')}
+                 className="flex items-center gap-1.5 bg-[#4F46E5] hover:bg-[#4338CA] text-white px-4 py-2 rounded-lg text-xs font-extrabold shadow-sm hover:shadow transition-all active:scale-[0.98]"
+               >
+@@ -704,20 +1043,20 @@ export function EmployeeDirectory() {
+             {/* Search Input */}
+             <div className="relative flex-1 w-full">
+               <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+-              <input 
+-                type="text" 
++              <input
++                type="text"
+                 placeholder="Search Digital Twins by name, code, department, role..."
+                 value={searchTerm}
+-                onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
++                onChange={e => { dispatch(setSearchTerm(e.target.value)); }}
+                 className="pl-9 pr-4 py-2.5 w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-lg text-xs outline-none focus:border-indigo-550 dark:focus:border-indigo-500 transition-colors font-semibold"
+               />
+             </div>
+-            
++
+             {/* Sort & View Switches */}
+             <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
+-              <select 
++              <select
+                 value={sortBy}
+-                onChange={e => setSortBy(e.target.value)}
++                onChange={e => dispatch(setSortBy(e.target.value))}
+                 className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-805 rounded-lg px-3 py-2 text-xs outline-none font-semibold text-slate-700 dark:text-slate-350"
+               >
+                 <option value="name">Sort by: Name</option>
+@@ -726,13 +1065,13 @@ export function EmployeeDirectory() {
+               </select>
+ 
+               <div className="flex items-center border border-slate-200 dark:border-slate-850 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-900">
+-                <button 
++                <button
+                   onClick={() => setViewMode('card')}
+                   className={`p-2 transition-all ${viewMode === 'card' ? 'bg-indigo-650 text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                 >
+                   <LayoutGrid className="w-4 h-4" />
+                 </button>
+-                <button 
++                <button
+                   onClick={() => setViewMode('table')}
+                   className={`p-2 transition-all ${viewMode === 'table' ? 'bg-indigo-650 text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                 >
+@@ -743,27 +1082,29 @@ export function EmployeeDirectory() {
+           </div>
+ 
+           {/* Quick Filters Drawer */}
+-          <div className="bg-slate-50 dark:bg-[#090D14] border border-slate-200/60 dark:border-slate-855/60 rounded-xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold">
++          <div className="bg-slate-50 dark:bg-[#090D14] border border-slate-200/60 dark:border-slate-855/60 rounded-xl p-4 grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs font-semibold">
+             <div>
+               <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Status</label>
+-              <select 
++              <select
+                 value={statusFilter}
+-                onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
++                onChange={e => { dispatch(setStatusFilter(e.target.value)); }}
+                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-xs outline-none text-slate-750 dark:text-slate-350"
+               >
+                 <option value="">All Statuses</option>
+                 <option value="ACTIVE">Active</option>
+                 <option value="ON_PROBATION">On Probation</option>
++                <option value="ON_NOTICE">On Notice</option>
+                 <option value="ON_LEAVE">On Leave</option>
+                 <option value="TERMINATED">Terminated</option>
++                <option value="ARCHIVED">Archived</option>
+               </select>
+             </div>
+-            
++
+             <div>
+               <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Location</label>
+-              <select 
++              <select
+                 value={locationFilter}
+-                onChange={e => { setLocationFilter(e.target.value); setCurrentPage(1); }}
++                onChange={e => { dispatch(setLocationFilter(e.target.value)); }}
+                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-xs outline-none text-slate-750 dark:text-slate-350"
+               >
+                 <option value="">All Locations</option>
+@@ -775,9 +1116,9 @@ export function EmployeeDirectory() {
+ 
+             <div>
+               <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Designation</label>
+-              <select 
++              <select
+                 value={typeFilter}
+-                onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}
++                onChange={e => { dispatch(setTypeFilter(e.target.value)); }}
+                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-xs outline-none text-slate-750 dark:text-slate-350"
+               >
+                 <option value="">All Roles</option>
+@@ -787,18 +1128,27 @@ export function EmployeeDirectory() {
+               </select>
+             </div>
+ 
++            <div>
++              <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Archived Records</label>
++              <label className="flex items-center gap-2 cursor-pointer mt-2 text-slate-700 dark:text-slate-300">
++                <input
++                  type="checkbox"
++                  checked={showArchived}
++                  onChange={e => { setShowArchived(e.target.checked); dispatch(setCurrentPage(1)); }}
++                  className="rounded border-slate-300 dark:border-slate-800 text-indigo-650 focus:ring-indigo-500 w-4 h-4"
++                />
++                <span>Show Archived</span>
++              </label>
++            </div>
++
+             <div>
+               <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">Clear Filters</label>
+-              <button 
++              <button
+                 onClick={() => {
+-                  setStatusFilter('');
+-                  setLocationFilter('');
+-                  setDeptFilter('');
+-                  setTypeFilter('');
+-                  setSearchTerm('');
+-                  setCurrentPage(1);
++                  dispatch(resetFilters());
++                  setShowArchived(false);
+                 }}
+-                className="w-full border border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-650 dark:text-slate-300 py-2 rounded-lg text-xs"
++                className="w-full border border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-650 dark:text-slate-300 py-2 rounded-lg text-xs font-bold"
+               >
+                 Reset Dashboard
+               </button>
+@@ -812,24 +1162,69 @@ export function EmployeeDirectory() {
+                 Selected {selectedIds.length} employee twins for bulk actions.
+               </span>
+               <div className="flex gap-3">
+-                <button 
+-                  onClick={() => exportToCSV(employees.filter(e => selectedIds.includes(e.id)))}
+-                  className="bg-white dark:bg-slate-900 hover:bg-slate-50 text-indigo-700 dark:text-indigo-300 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-lg"
+-                >
+-                  Export Selected
+-                </button>
+-                <button 
+-                  onClick={handleBulkChangeManager}
+-                  className="bg-[#27272A] hover:bg-[#3F3F46] dark:bg-slate-800 dark:hover:bg-slate-700 text-white px-3.5 py-2 rounded-lg"
+-                >
+-                  Re-assign Manager
+-                </button>
+-                <button 
+-                  onClick={handleBulkTerminate}
+-                  className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-lg"
++              <div className="flex gap-3 relative bulk-export-dropdown-container">
++                <button
++                  disabled={isExporting}
++                  onClick={() => setShowBulkExportDropdown(!showBulkExportDropdown)}
++                  className="bg-white dark:bg-slate-900 hover:bg-slate-50 text-indigo-700 dark:text-indigo-300 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-lg flex items-center gap-1 transition-all active:scale-[0.98]"
+                 >
+-                  Bulk Terminate
++                  {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1 text-slate-500" /> : null}
++                  Export Selected <ChevronDown className="w-3.5 h-3.5 ml-1 text-slate-400" />
+                 </button>
++                {showBulkExportDropdown && (
++                  <div className="absolute left-0 bottom-full mb-2 w-48 bg-white dark:bg-[#0B0F19] border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg z-50 py-1.5 text-xs text-slate-700 dark:text-slate-200 animate-slide-in">
++                    <button onClick={() => { triggerExport('csv', 'selected'); setShowBulkExportDropdown(false); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                      <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Export CSV
++                    </button>
++                    <button onClick={() => { triggerExport('excel', 'selected'); setShowBulkExportDropdown(false); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                      <FileSpreadsheet className="w-4 h-4 text-indigo-500" /> Export Excel (.xlsx)
++                    </button>
++                    <button onClick={() => { triggerExport('pdf', 'selected'); setShowBulkExportDropdown(false); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 text-left">
++                      <FileText className="w-4 h-4 text-rose-500" /> Export PDF
++                    </button>
++                  </div>
++                )}
++              </div>
++                {canPerformBulk ? (
++                  <button
++                    onClick={handleBulkChangeManager}
++                    className="bg-[#27272A] hover:bg-[#3F3F46] dark:bg-slate-800 dark:hover:bg-slate-700 text-white px-3.5 py-2 rounded-lg"
++                  >
++                    Re-assign Manager
++                  </button>
++                ) : (
++                  <button
++                    disabled
++                    title="Requires Admin privileges"
++                    className="bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-600 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-lg cursor-not-allowed"
++                  >
++                    Re-assign Manager
++                  </button>
++                )}
++                {canPerformBulk ? (
++                  <button
++                    onClick={handleBulkTerminate}
++                    className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-lg"
++                  >
++                    Bulk Terminate
++                  </button>
++                ) : (
++                  <button
++                    disabled
++                    title="Requires Admin privileges"
++                    className="bg-rose-100/50 dark:bg-rose-950/20 text-rose-300 dark:text-rose-900 border border-rose-200 dark:border-rose-900 px-3.5 py-2 rounded-lg cursor-not-allowed"
++                  >
++                    Bulk Terminate
++                  </button>
++                )}
++                {canArchive && (
++                  <button
++                    onClick={() => { setBulkArchiveReason(''); setActiveModal('bulkArchive'); }}
++                    className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-lg"
++                  >
++                    Bulk Archive
++                  </button>
++                )}
+               </div>
+             </div>
+           )}
+@@ -872,18 +1267,17 @@ export function EmployeeDirectory() {
+               {currentEmployees.map(emp => {
+                 const isSelected = selectedIds.includes(emp.id);
+                 return (
+-                  <div 
++                  <div
+                     key={emp.id}
+-                    className={`bg-white dark:bg-[#0B0F19] rounded-xl border p-5 hover:shadow-xl hover:border-indigo-500/35 transition-all duration-300 cursor-pointer relative group flex flex-col justify-between h-[180px] ${
+-                      isSelected ? 'border-indigo-650 ring-2 ring-indigo-500/10' : 'border-slate-200/80 dark:border-slate-850'
+-                    }`}
++                    className={`bg-white dark:bg-[#0B0F19] rounded-xl border p-5 hover:shadow-xl hover:border-indigo-500/35 transition-all duration-300 cursor-pointer relative group flex flex-col justify-between h-[180px] ${isSelected ? 'border-indigo-650 ring-2 ring-indigo-500/10' : 'border-slate-200/80 dark:border-slate-850'
++                      }`}
+                   >
+                     {/* Checkbox selector */}
+-                    <div 
+-                      onClick={(e) => e.stopPropagation()} 
++                    <div
++                      onClick={(e) => e.stopPropagation()}
+                       className="absolute top-4 right-4"
+                     >
+-                      <input 
++                      <input
+                         type="checkbox"
+                         checked={isSelected}
+                         onChange={(e) => handleSelectOne(emp.id, e.target.checked)}
+@@ -891,30 +1285,29 @@ export function EmployeeDirectory() {
+                       />
+                     </div>
+ 
+-                    <div 
+-                      onClick={() => setSelectedEmployee(emp)} 
++                    <div
++                      onClick={() => setSelectedEmployee(emp)}
+                       className="flex items-start gap-4 flex-1"
+                     >
+                       {emp.avatarUrl ? (
+-                        <img 
+-                          src={emp.avatarUrl} 
+-                          alt={emp.displayName} 
+-                          className="w-12 h-12 rounded-xl object-cover ring-2 ring-indigo-500/5 group-hover:ring-indigo-500/20 transition-all shrink-0" 
++                        <img
++                          src={emp.avatarUrl}
++                          alt={emp.displayName}
++                          className="w-12 h-12 rounded-xl object-cover ring-2 ring-indigo-500/5 group-hover:ring-indigo-500/20 transition-all shrink-0"
+                         />
+                       ) : (
+                         <div className={`w-12 h-12 rounded-xl bg-gradient-to-tr ${getRandomGradient(emp.displayName)} flex items-center justify-center text-white text-base font-extrabold shrink-0`}>
+                           {getInitials(emp.displayName)}
+                         </div>
+                       )}
+-                      
++
+                       <div className="flex-1 min-w-0">
+                         <div className="flex items-center gap-1.5 justify-start">
+                           <span className="text-[10px] font-mono font-extrabold text-indigo-650 dark:text-indigo-400">{emp.employeeCode}</span>
+-                          <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide ${
+-                            emp.employmentStatus === 'ACTIVE' 
+-                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400' 
++                          <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide ${emp.employmentStatus === 'ACTIVE'
++                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400'
+                               : 'bg-rose-50 text-rose-700 dark:bg-rose-955/20 dark:text-rose-400'
+-                          }`}>
++                            }`}>
+                             {emp.employmentStatus}
+                           </span>
+                         </div>
+@@ -926,8 +1319,8 @@ export function EmployeeDirectory() {
+                     </div>
+ 
+                     {/* Footer DNA details */}
+-                    <div 
+-                      onClick={() => setSelectedEmployee(emp)} 
++                    <div
++                      onClick={() => setSelectedEmployee(emp)}
+                       className="border-t border-slate-100 dark:border-slate-850/60 pt-3 mt-3 grid grid-cols-2 gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold"
+                     >
+                       <div className="flex items-center gap-1.5 min-w-0">
+@@ -951,7 +1344,7 @@ export function EmployeeDirectory() {
+                   <thead>
+                     <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200/85 dark:border-slate-855 text-slate-450 uppercase text-[9px] font-bold tracking-wider">
+                       <th className="p-4 w-10">
+-                        <input 
++                        <input
+                           type="checkbox"
+                           onChange={handleSelectAll}
+                           checked={selectedIds.length === currentEmployees.length && currentEmployees.length > 0}
+@@ -971,13 +1364,13 @@ export function EmployeeDirectory() {
+                     {currentEmployees.map(emp => {
+                       const isSelected = selectedIds.includes(emp.id);
+                       return (
+-                        <tr 
++                        <tr
+                           key={emp.id}
+                           onClick={() => setSelectedEmployee(emp)}
+                           className={`hover:bg-slate-50/60 dark:hover:bg-slate-900/35 transition-all cursor-pointer ${isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/10' : ''}`}
+                         >
+                           <td className="p-4" onClick={e => e.stopPropagation()}>
+-                            <input 
++                            <input
+                               type="checkbox"
+                               checked={isSelected}
+                               onChange={e => handleSelectOne(emp.id, e.target.checked)}
+@@ -1002,11 +1395,10 @@ export function EmployeeDirectory() {
+                           <td className="p-4">{emp.designation}</td>
+                           <td className="p-4">{emp.location}</td>
+                           <td className="p-4">
+-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${
+-                              emp.employmentStatus === 'ACTIVE' 
+-                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400' 
++                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${emp.employmentStatus === 'ACTIVE'
++                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400'
+                                 : 'bg-rose-50 text-rose-700 dark:bg-rose-955/20 dark:text-rose-400'
+-                            }`}>
++                              }`}>
+                               {emp.employmentStatus}
+                             </span>
+                           </td>
+@@ -1026,7 +1418,7 @@ export function EmployeeDirectory() {
+               Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, sortedEmployees.length)} of {sortedEmployees.length} employee twins
+             </span>
+             <div className="flex gap-2">
+-              <button 
++              <button
+                 disabled={currentPage === 1}
+                 onClick={() => handlePageChange(currentPage - 1)}
+                 className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 disabled:opacity-50 text-slate-700 dark:text-slate-300 font-bold"
+@@ -1037,16 +1429,15 @@ export function EmployeeDirectory() {
+                 <button
+                   key={i}
+                   onClick={() => handlePageChange(i + 1)}
+-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+-                    currentPage === i + 1 
+-                      ? 'bg-[#4F46E5] text-white border-[#4F46E5]' 
++                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${currentPage === i + 1
++                      ? 'bg-[#4F46E5] text-white border-[#4F46E5]'
+                       : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-350'
+-                  }`}
++                    }`}
+                 >
+                   {i + 1}
+                 </button>
+               ))}
+-              <button 
++              <button
+                 disabled={currentPage === totalPages}
+                 onClick={() => handlePageChange(currentPage + 1)}
+                 className="px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 disabled:opacity-50 text-slate-700 dark:text-slate-300 font-bold"
+@@ -1061,23 +1452,25 @@ export function EmployeeDirectory() {
+         <div className="space-y-6 animate-fade-in text-slate-850 dark:text-white">
+           {/* Header Action bar */}
+           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 dark:border-slate-850 pb-4">
+-            <button 
++            <button
+               onClick={() => { setSelectedEmployee(null); setActiveTab('overview'); }}
+               className="flex items-center gap-1.5 text-xs text-slate-450 hover:text-indigo-650 dark:hover:text-indigo-400 font-bold transition-colors"
+             >
+               <ArrowLeft className="w-4 h-4" /> Back to Master Directory
+             </button>
+-            
++
+             <div className="flex flex-wrap items-center gap-2">
+-              <button 
+-                onClick={() => setMaskSensitive(!maskSensitive)}
+-                className="flex items-center gap-1.5 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-lg text-xs text-slate-650 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all font-bold"
+-              >
+-                {maskSensitive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />} 
+-                {maskSensitive ? 'Reveal Compliance Keys' : 'Mask Compliance Keys'}
+-              </button>
++              {currentUser && ['ROLE_ULTRA_SUPER_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_ADMIN'].includes(currentUser.role) && (
++                <button
++                  onClick={() => setMaskSensitive(!maskSensitive)}
++                  className="flex items-center gap-1.5 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-lg text-xs text-slate-650 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all font-bold"
++                >
++                  {maskSensitive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
++                  {maskSensitive ? 'Reveal Compliance Keys' : 'Mask Compliance Keys'}
++                </button>
++              )}
+ 
+-              <button 
++              <button
+                 onClick={openEditIdentityModal}
+                 className="flex items-center gap-1.5 bg-[#4F46E5] hover:bg-[#4338CA] text-white px-3.5 py-2 rounded-lg text-xs font-bold transition-all active:scale-[0.98]"
+               >
+@@ -1088,21 +1481,21 @@ export function EmployeeDirectory() {
+ 
+           {/* Employee Twin Core Profile Card Widget */}
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+-            
++
+             {/* LEFT PROFILE CARD */}
+             <div className="relative overflow-hidden pt-0 px-6 pb-6 bg-white dark:bg-[#0B0F19] rounded-2xl border border-slate-200/80 dark:border-slate-850 flex flex-col justify-between shadow-sm space-y-6">
+-              
++
+               {/* Blue/indigo gradient top header banner */}
+               <div className="bg-gradient-to-r from-blue-500 via-[#4F46E5] to-[#5D69F4] h-24 -mx-6 rounded-t-2xl relative" />
+-              
++
+               <div className="flex flex-col items-center text-center -mt-14 relative z-10 space-y-3">
+                 {/* Circular Avatar with Active Availability Indicator */}
+                 <div className="relative">
+                   {selectedEmployee.avatarUrl ? (
+-                    <img 
+-                      src={selectedEmployee.avatarUrl} 
+-                      alt={selectedEmployee.displayName} 
+-                      className="w-22 h-22 rounded-full object-cover border-4 border-white dark:border-[#0B0F19] shadow-md" 
++                    <img
++                      src={selectedEmployee.avatarUrl}
++                      alt={selectedEmployee.displayName}
++                      className="w-22 h-22 rounded-full object-cover border-4 border-white dark:border-[#0B0F19] shadow-md"
+                     />
+                   ) : (
+                     <div className={`w-22 h-22 rounded-full bg-gradient-to-tr ${getRandomGradient(selectedEmployee.displayName)} flex items-center justify-center text-white text-3xl font-extrabold border-4 border-white dark:border-[#0B0F19] shadow-md`}>
+@@ -1116,7 +1509,7 @@ export function EmployeeDirectory() {
+ 
+                 <div className="space-y-1">
+                   <h2 className="text-lg font-extrabold text-slate-905 dark:text-white leading-tight">{selectedEmployee.displayName}</h2>
+-                  
++
+                   {/* Copyable Employee Code Badge */}
+                   <div className="flex items-center justify-center gap-1.5 mt-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 px-2.5 py-1 rounded-full border border-indigo-100 dark:border-indigo-900/30 font-mono text-[10px] font-bold cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all active:scale-95 inline-flex" onClick={() => { navigator.clipboard.writeText(selectedEmployee.employeeCode); triggerToast("Copied Employee Code: " + selectedEmployee.employeeCode); }}>
+                     <span>{selectedEmployee.employeeCode}</span>
+@@ -1130,7 +1523,7 @@ export function EmployeeDirectory() {
+                   </div>
+ 
+                   <p className="text-xs font-bold text-slate-450 dark:text-slate-300 pt-1">{getDesigName(selectedEmployee.designationId)}</p>
+-                  
++
+                   <div className="flex flex-col gap-2 mt-4 text-xs font-semibold text-slate-600 dark:text-slate-400 w-full text-left border-t border-slate-100 dark:border-slate-850/60 pt-4">
+                     <div className="flex items-center gap-2">
+                       <Building className="w-4 h-4 text-slate-400 shrink-0" />
+@@ -1151,7 +1544,7 @@ export function EmployeeDirectory() {
+                   <span className="text-indigo-650 dark:text-indigo-400">{completionScore}%</span>
+                 </div>
+                 <div className="w-full bg-slate-100 dark:bg-slate-850 rounded-full h-2 overflow-hidden">
+-                  <div 
++                  <div
+                     className="bg-gradient-to-r from-indigo-500 to-emerald-450 h-2 rounded-full transition-all duration-500"
+                     style={{ width: `${completionScore}%` }}
+                   />
+@@ -1165,37 +1558,69 @@ export function EmployeeDirectory() {
+               <div className="border-t border-slate-100 dark:border-slate-850/60 pt-5 space-y-2">
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">QUICK ACTIONS</p>
+                 <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+-                  <button 
++                  <button
+                     onClick={() => { setTransferDept(selectedEmployee.departmentId || ''); setTransferLoc(selectedEmployee.locationId || ''); setActiveModal('transfer'); }}
+                     className="flex items-center justify-center gap-2 border border-slate-205 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60 p-2.5 rounded-xl text-center cursor-pointer text-slate-700 dark:text-slate-355 hover:border-indigo-500/30 transition-all"
+                   >
+                     <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400" />
+                     <span>Transfer</span>
+                   </button>
+-                  
+-                  <button 
++
++                  <button
+                     onClick={() => { setPromoteDesignation(selectedEmployee.designationId || ''); setPromoteGrade(selectedEmployee.gradeId || ''); setActiveModal('promote'); }}
+                     className="flex items-center justify-center gap-2 border border-slate-205 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60 p-2.5 rounded-xl text-center cursor-pointer text-slate-700 dark:text-slate-355 hover:border-indigo-500/30 transition-all"
+                   >
+                     <ArrowUp className="w-3.5 h-3.5 text-slate-400" />
+                     <span>Promote</span>
+                   </button>
+-                  
+-                  <button 
++
++                  <button
+                     onClick={() => { setNewManagerId(selectedEmployee.managerId || ''); setActiveModal('manager'); }}
+                     className="flex items-center justify-center gap-2 border border-slate-205 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60 p-2.5 rounded-xl text-center cursor-pointer text-slate-700 dark:text-slate-355 hover:border-indigo-500/30 transition-all"
+                   >
+                     <UserPlus className="w-3.5 h-3.5 text-slate-400" />
+                     <span className="truncate">Assign Manager</span>
+                   </button>
+-                  
+-                  <button 
+-                    onClick={() => { setTerminateDate(''); setTerminateReason(''); setActiveModal('terminate'); }}
+-                    className="flex items-center justify-center gap-2 border border-rose-200/60 dark:border-rose-955/20 hover:bg-rose-50 dark:hover:bg-rose-955/20 p-2.5 rounded-xl text-center cursor-pointer text-rose-600 dark:text-rose-450 transition-all"
+-                  >
+-                    <UserMinus className="w-3.5 h-3.5" />
+-                    <span>Terminate</span>
+-                  </button>
++
++                  {canTerminate && selectedEmployee.employmentStatus !== 'TERMINATED' && selectedEmployee.employmentStatus !== 'ARCHIVED' && (
++                    <button
++                      onClick={() => { setTerminateDate(''); setTerminateReason(''); setActiveModal('terminate'); }}
++                      className="flex items-center justify-center gap-2 border border-rose-200/60 dark:border-rose-955/20 hover:bg-rose-50 dark:hover:bg-rose-955/20 p-2.5 rounded-xl text-center cursor-pointer text-rose-600 dark:text-rose-450 transition-all"
++                    >
++                      <UserMinus className="w-3.5 h-3.5" />
++                      <span>Terminate</span>
++                    </button>
++                  )}
++
++                  {canArchive && selectedEmployee.employmentStatus !== 'ARCHIVED' && (
++                    <button
++                      onClick={() => { setArchiveReason(''); setActiveModal('archive'); }}
++                      className="flex items-center justify-center gap-2 border border-amber-200/60 dark:border-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-955/20 p-2.5 rounded-xl text-center cursor-pointer text-amber-600 dark:text-amber-405 transition-all"
++                    >
++                      <Trash2 className="w-3.5 h-3.5" />
++                      <span>Archive</span>
++                    </button>
++                  )}
++
++                  {canRestore && (selectedEmployee.employmentStatus === 'ARCHIVED' || selectedEmployee.deleted) && (
++                    <button
++                      onClick={submitRestore}
++                      className="flex items-center justify-center gap-2 border border-emerald-200/60 dark:border-emerald-950/20 hover:bg-emerald-50 dark:hover:bg-emerald-955/20 p-2.5 rounded-xl text-center cursor-pointer text-emerald-650 dark:text-emerald-450 transition-all"
++                    >
++                      <CheckCircle2 className="w-3.5 h-3.5" />
++                      <span>Restore</span>
++                    </button>
++                  )}
++
++                  {(currentUser?.role === 'ROLE_SUPER_ADMIN' || currentUser?.role === 'ROLE_ULTRA_SUPER_ADMIN') && (
++                    <button
++                      onClick={submitDelete}
++                      className="flex items-center justify-center gap-2 border border-red-200/65 dark:border-red-950/25 hover:bg-red-50 dark:hover:bg-red-955/15 p-2 rounded-xl text-center cursor-pointer text-red-600 dark:text-red-400 transition-all col-span-2 mt-1"
++                    >
++                      <Trash className="w-3.5 h-3.5 text-red-550" />
++                      <span>Permanently Delete Twin</span>
++                    </button>
++                  )}
+                 </div>
+               </div>
+ 
+@@ -1220,7 +1645,7 @@ export function EmployeeDirectory() {
+ 
+             {/* RIGHT WORKSPACE CONSOLE */}
+             <div className="lg:col-span-2 flex flex-col space-y-6">
+-              
++
+               {/* Tab Selector Navigation */}
+               <div className="border-b border-slate-200 dark:border-slate-800 flex flex-wrap gap-1 bg-white dark:bg-[#0B0F19] rounded-xl p-1.5 shadow-sm border border-slate-200/60 dark:border-slate-850">
+                 {[
+@@ -1240,11 +1665,10 @@ export function EmployeeDirectory() {
+                   <button
+                     key={tab.id}
+                     onClick={() => setActiveTab(tab.id as any)}
+-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all outline-none ${
+-                      activeTab === tab.id
++                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all outline-none ${activeTab === tab.id
+                         ? 'bg-[#4F46E5] text-white shadow-sm'
+                         : 'text-slate-450 hover:text-slate-700 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900'
+-                    }`}
++                      }`}
+                   >
+                     <tab.icon className="w-3.5 h-3.5 shrink-0" />
+                     <span>{tab.label}</span>
+@@ -1254,10 +1678,10 @@ export function EmployeeDirectory() {
+ 
+               {/* Dynamic Console Content Panel */}
+               <div className="bg-white dark:bg-[#0B0F19] rounded-xl border border-slate-200/80 dark:border-slate-850 p-6 min-h-[400px] shadow-sm">
+-                                {activeTab === 'overview' && (
++                {activeTab === 'overview' && (
+                   <div className="space-y-6 animate-fade-in text-xs font-semibold">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+-                      
++
+                       {/* Twin Health Summary Card */}
+                       <div className="bg-white dark:bg-[#0B0F19] p-5 rounded-2xl border border-slate-200/80 dark:border-slate-850 shadow-sm space-y-4">
+                         <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-850 pb-3">
+@@ -1287,23 +1711,21 @@ export function EmployeeDirectory() {
+                           ].map((item, idx) => (
+                             <div key={idx} className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-350">
+                               <div className="flex items-center gap-2.5">
+-                                <button 
++                                <button
+                                   onClick={item.onClick}
+-                                  className={`w-5 h-5 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+-                                    item.checked 
+-                                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 border-none' 
++                                  className={`w-5 h-5 rounded-full flex items-center justify-center transition-all cursor-pointer ${item.checked
++                                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 border-none'
+                                       : 'bg-indigo-50 hover:bg-indigo-105 text-indigo-600 dark:bg-indigo-950/20 dark:hover:bg-indigo-900/40 border-none'
+-                                  }`}
++                                    }`}
+                                 >
+                                   {item.checked ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                                 </button>
+                                 <span className={item.checked ? 'line-through text-slate-400 dark:text-slate-600' : 'text-slate-800 dark:text-slate-200'}>{item.label}</span>
+                               </div>
+-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+-                                item.checked 
+-                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20' 
++                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.checked
++                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20'
+                                   : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/20 dark:text-indigo-400'
+-                              }`}>
++                                }`}>
+                                 {item.pct}
+                               </span>
+                             </div>
+@@ -1322,7 +1744,7 @@ export function EmployeeDirectory() {
+                             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">Core organizational alignment details</p>
+                           </div>
+                         </div>
+-                        
++
+                         <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-xs">
+                           <div>
+                             <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Joining Date</p>
+@@ -1358,14 +1780,14 @@ export function EmployeeDirectory() {
+ 
+                     {/* Stat lists and illustrations */}
+                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+-                      
++
+                       {/* Assessed Skills Card */}
+                       <div className="relative overflow-hidden bg-white dark:bg-[#0B0F19] border border-slate-200/80 dark:border-slate-850 p-4.5 rounded-2xl shadow-sm flex flex-col justify-between min-h-[120px] group hover:border-indigo-500/20 transition-all duration-300">
+                         <div className="flex justify-between items-start">
+                           <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center shrink-0">
+                             <Award className="w-4.5 h-4.5 text-purple-650 dark:text-purple-400" />
+                           </div>
+-                          
++
+                           {/* Target radar/concentric circle decoration */}
+                           <div className="absolute top-2 right-2 opacity-5 dark:opacity-10 group-hover:scale-110 transition-transform duration-500">
+                             <svg className="w-16 h-16 text-purple-600" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="2">
+@@ -1394,7 +1816,7 @@ export function EmployeeDirectory() {
+                           <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-955/30 flex items-center justify-center shrink-0">
+                             <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 dark:text-emerald-400" />
+                           </div>
+-                          
++
+                           {/* Certificate/medal decoration */}
+                           <div className="absolute top-2 right-2 opacity-5 dark:opacity-10 group-hover:scale-110 transition-transform duration-500">
+                             <svg className="w-16 h-16 text-emerald-600" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="2">
+@@ -1421,7 +1843,7 @@ export function EmployeeDirectory() {
+                           <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center shrink-0">
+                             <FileText className="w-4.5 h-4.5 text-amber-600 dark:text-amber-400" />
+                           </div>
+-                          
++
+                           {/* Folder/documents decoration */}
+                           <div className="absolute top-2 right-2 opacity-5 dark:opacity-10 group-hover:scale-110 transition-transform duration-500">
+                             <svg className="w-16 h-16 text-amber-600" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="2">
+@@ -1452,7 +1874,7 @@ export function EmployeeDirectory() {
+                           View Timeline Log &rarr;
+                         </button>
+                       </div>
+-                      
++
+                       {!selectedEmployee.timeline || selectedEmployee.timeline.length === 0 ? (
+                         <div className="flex flex-col items-center justify-center py-6 text-center text-slate-450 dark:text-slate-500">
+                           <Calendar className="w-10 h-10 text-slate-300 dark:text-slate-700 mb-2" />
+@@ -1479,7 +1901,7 @@ export function EmployeeDirectory() {
+                 {/* 2. IDENTITY & CONTACT TAB */}
+                 {activeTab === 'identity' && (
+                   <div className="space-y-8 animate-fade-in text-xs font-semibold text-slate-700 dark:text-slate-300">
+-                    
++
+                     {/* Personal Details */}
+                     <div>
+                       <h3 className="text-xs font-extrabold text-slate-450 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-2 mb-4">Personal Attributes</h3>
+@@ -1550,7 +1972,7 @@ export function EmployeeDirectory() {
+                         <div className="sm:col-span-2">
+                           <p className="text-[10px] text-slate-400 font-bold uppercase">Addresses (Current & Permanent)</p>
+                           <p className="mt-1 text-slate-900 dark:text-white leading-relaxed">
+-                            <span className="font-bold">Current:</span> {selectedEmployee.currentAddress || 'Not registered'} <br/>
++                            <span className="font-bold">Current:</span> {selectedEmployee.currentAddress || 'Not registered'} <br />
+                             <span className="font-bold mt-1 inline-block">Permanent:</span> {selectedEmployee.permanentAddress || 'Not registered'}
+                           </p>
+                         </div>
+@@ -1589,31 +2011,31 @@ export function EmployeeDirectory() {
+                         <div>
+                           <p className="text-[10px] text-slate-450 font-bold uppercase">Tax ID (PAN)</p>
+                           <p className="mt-1 font-mono font-bold text-slate-900 dark:text-white">
+-                            {maskSensitive ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.panNumber || 'N/A'}
++                            {isMasked ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.panNumber || 'N/A'}
+                           </p>
+                         </div>
+                         <div>
+                           <p className="text-[10px] text-slate-450 font-bold uppercase">National ID (Aadhaar)</p>
+                           <p className="mt-1 font-mono font-bold text-slate-900 dark:text-white">
+-                            {maskSensitive ? 'ΓÇóΓÇóΓÇóΓÇó-ΓÇóΓÇóΓÇóΓÇó-ΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.aadhaarNumber || 'N/A'}
++                            {isMasked ? 'ΓÇóΓÇóΓÇóΓÇó-ΓÇóΓÇóΓÇóΓÇó-ΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.aadhaarNumber || 'N/A'}
+                           </p>
+                         </div>
+                         <div>
+                           <p className="text-[10px] text-slate-455 font-bold uppercase">PF UAN Number</p>
+                           <p className="mt-1 font-mono font-bold text-slate-900 dark:text-white">
+-                            {maskSensitive ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.uanNumber || 'N/A'}
++                            {isMasked ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.uanNumber || 'N/A'}
+                           </p>
+                         </div>
+                         <div>
+                           <p className="text-[10px] text-slate-455 font-bold uppercase">ESIC Number</p>
+                           <p className="mt-1 font-mono font-bold text-slate-900 dark:text-white">
+-                            {maskSensitive ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.esicNumber || 'N/A'}
++                            {isMasked ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.esicNumber || 'N/A'}
+                           </p>
+                         </div>
+                         <div>
+                           <p className="text-[10px] text-slate-455 font-bold uppercase">Passport Number</p>
+                           <p className="mt-1 font-mono font-bold text-slate-900 dark:text-white">
+-                            {maskSensitive ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.passportNumber || 'N/A'}
++                            {isMasked ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.passportNumber || 'N/A'}
+                           </p>
+                         </div>
+                         <div>
+@@ -1623,8 +2045,8 @@ export function EmployeeDirectory() {
+                         <div className="col-span-2">
+                           <p className="text-[10px] text-slate-455 font-bold uppercase">Bank Account Details</p>
+                           <p className="mt-1 text-slate-900 dark:text-white leading-relaxed">
+-                            <span className="font-bold">Bank:</span> {selectedEmployee.bankName || 'N/A'} <br/>
+-                            <span className="font-bold">Account:</span> {maskSensitive ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.bankAccountNumber || 'N/A'} <br/>
++                            <span className="font-bold">Bank:</span> {selectedEmployee.bankName || 'N/A'} <br />
++                            <span className="font-bold">Account:</span> {isMasked ? 'ΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇóΓÇó' : selectedEmployee.bankAccountNumber || 'N/A'} <br />
+                             <span className="font-bold">IFSC:</span> {selectedEmployee.bankIfsc || 'N/A'} (Branch: {selectedEmployee.bankBranch || 'N/A'})
+                           </p>
+                         </div>
+@@ -1665,7 +2087,7 @@ export function EmployeeDirectory() {
+                   <div className="space-y-6 animate-fade-in">
+                     <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                       <h3 className="text-xs font-extrabold text-slate-450 uppercase tracking-wider">Assessed Skills Cloud</h3>
+-                      <button 
++                      <button
+                         onClick={() => setActiveModal('addSkill')}
+                         className="text-xs text-[#4F46E5] dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                       >
+@@ -1690,7 +2112,7 @@ export function EmployeeDirectory() {
+                               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-755 dark:bg-indigo-950/30 dark:text-indigo-400 border border-indigo-100/50">
+                                 {skill.proficiencyLevel || skill.level}
+                               </span>
+-                              <button 
++                              <button
+                                 onClick={() => removeSkill(idx)}
+                                 className="text-slate-400 hover:text-rose-500 transition-colors p-1"
+                               >
+@@ -1709,7 +2131,7 @@ export function EmployeeDirectory() {
+                   <div className="space-y-6 animate-fade-in">
+                     <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                       <h3 className="text-xs font-extrabold text-slate-455 uppercase tracking-wider">Verification Certifications</h3>
+-                      <button 
++                      <button
+                         onClick={() => setActiveModal('addCert')}
+                         className="text-xs text-[#4F46E5] dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                       >
+@@ -1725,7 +2147,7 @@ export function EmployeeDirectory() {
+                       <div className="space-y-4">
+                         {selectedEmployee.certifications.map((cert: any, idx: number) => {
+                           const isExpired = cert.expiryDate ? new Date(cert.expiryDate) < new Date() : false;
+-                          const isExpiringSoon = cert.expiryDate 
++                          const isExpiringSoon = cert.expiryDate
+                             ? (new Date(cert.expiryDate).getTime() - new Date().getTime()) < (30 * 24 * 60 * 60 * 1000) && !isExpired
+                             : false;
+                           return (
+@@ -1758,7 +2180,7 @@ export function EmployeeDirectory() {
+                                   </span>
+                                 )}
+ 
+-                                <button 
++                                <button
+                                   onClick={() => removeCert(idx)}
+                                   className="text-slate-400 hover:text-rose-550 transition-colors p-1"
+                                 >
+@@ -1778,7 +2200,7 @@ export function EmployeeDirectory() {
+                   <div className="space-y-6 animate-fade-in font-semibold text-slate-700 dark:text-slate-355">
+                     <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                       <h3 className="text-xs font-extrabold text-slate-455 uppercase tracking-wider">Compliance Document Vault</h3>
+-                      <button 
++                      <button
+                         onClick={() => setActiveModal('addDoc')}
+                         className="text-xs text-[#4F46E5] dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                       >
+@@ -1809,7 +2231,7 @@ export function EmployeeDirectory() {
+                                 <CheckCircle className="w-3 h-3" /> {doc.verificationStatus || doc.status || 'PENDING'}
+                               </span>
+                               <span className="text-[10px] text-slate-450 hidden sm:inline">Expiry: {doc.expiryDate || doc.expiry || 'Never'}</span>
+-                              <button 
++                              <button
+                                 onClick={() => removeDoc(idx)}
+                                 className="text-slate-400 hover:text-rose-500 transition-colors p-1"
+                               >
+@@ -1828,7 +2250,7 @@ export function EmployeeDirectory() {
+                   <div className="space-y-6 animate-fade-in">
+                     <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                       <h3 className="text-xs font-extrabold text-slate-450 uppercase tracking-wider">Graph Relationship Network</h3>
+-                      <button 
++                      <button
+                         onClick={() => setActiveModal('addRelation')}
+                         className="text-xs text-[#4F46E5] dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                       >
+@@ -1839,7 +2261,7 @@ export function EmployeeDirectory() {
+                     {/* Interactive Tree Graph visualization */}
+                     <div className="bg-slate-50 dark:bg-slate-900/20 rounded-xl p-6 border border-slate-200/60 dark:border-slate-855 flex flex-col items-center justify-center space-y-4">
+                       <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-2">Workforce Reporting Lineage</p>
+-                      
++
+                       <div className="flex flex-col items-center w-full max-w-lg space-y-3">
+                         {/* Department Head */}
+                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl text-center w-full max-w-[200px] shadow-sm">
+@@ -1883,7 +2305,7 @@ export function EmployeeDirectory() {
+                         {/* Line & Peer relationships */}
+                         <div className="w-0.5 h-3 bg-indigo-500" />
+                         <div className="w-full h-0.5 bg-indigo-500" />
+-                        
++
+                         <div className="grid grid-cols-3 gap-3 w-full pt-1.5">
+                           <div className="flex flex-col items-center">
+                             <div className="w-0.5 h-2 bg-indigo-500" />
+@@ -1894,7 +2316,7 @@ export function EmployeeDirectory() {
+                               </p>
+                             </div>
+                           </div>
+-                          
++
+                           <div className="flex flex-col items-center">
+                             <div className="w-0.5 h-2 bg-indigo-500" />
+                             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2 rounded-xl text-center w-full shadow-sm min-h-[45px] flex flex-col justify-center">
+@@ -1944,7 +2366,7 @@ export function EmployeeDirectory() {
+                                 <span className="text-[8px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-755 dark:bg-indigo-950/20 dark:text-indigo-400 border border-indigo-100/30">
+                                   {rel.relationshipType || rel.type}
+                                 </span>
+-                                <button 
++                                <button
+                                   onClick={() => removeRel(idx)}
+                                   className="text-slate-400 hover:text-rose-500 transition-colors p-1"
+                                 >
+@@ -1963,7 +2385,7 @@ export function EmployeeDirectory() {
+                 {activeTab === 'timeline' && (
+                   <div className="space-y-6 animate-fade-in">
+                     <h3 className="text-xs font-extrabold text-slate-450 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-2">Digital Twin Immutable Timeline</h3>
+-                    
++
+                     {selectedEmployee.timeline.length === 0 ? (
+                       <div className="py-12 text-center text-xs text-slate-450 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg">
+                         No lifecycle timeline entries recorded yet.
+@@ -2001,7 +2423,7 @@ export function EmployeeDirectory() {
+                 {activeTab === 'audit' && (
+                   <div className="space-y-6 animate-fade-in text-xs font-semibold">
+                     <h3 className="text-xs font-extrabold text-slate-455 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 pb-2">Platform Master Audit Logs</h3>
+-                    
++
+                     <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-850 rounded-xl overflow-hidden shadow-sm">
+                       <table className="w-full text-left border-collapse text-xs">
+                         <thead>
+@@ -2014,7 +2436,7 @@ export function EmployeeDirectory() {
+                         </thead>
+                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-350">
+                           <tr>
+-                            <td className="p-3 font-bold">admin@managemyopz.com</td>
++                            <td className="p-3 font-bold">admin@managemytalenthive.com</td>
+                             <td className="p-3 font-mono text-[10px]">2026-06-18 10:14:22</td>
+                             <td className="p-3"><span className="text-indigo-650 bg-indigo-50 dark:bg-indigo-950/20 px-2 py-0.5 rounded text-[10px]">UPDATE</span></td>
+                             <td className="p-3">Modified contact details and emergency configurations.</td>
+@@ -2039,7 +2461,7 @@ export function EmployeeDirectory() {
+ 
+                 {/* 10. USER ACCOUNT TAB */}
+                 {activeTab === 'account' && (
+-                  <UserAccountTab 
++                  <UserAccountTab
+                     employeeId={selectedEmployee.id}
+                     readOnly={currentUser?.role === 'ROLE_MANAGER'}
+                   />
+@@ -2057,7 +2479,7 @@ export function EmployeeDirectory() {
+       {activeModal !== 'none' && (
+         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-55 flex items-center justify-center p-4">
+           <div className="bg-white dark:bg-[#0C101B] border border-slate-202 dark:border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl animate-fade-in text-xs font-semibold">
+-            
++
+             {/* Transfer Modal */}
+             {activeModal === 'transfer' && (
+               <div className="space-y-4">
+@@ -2065,7 +2487,7 @@ export function EmployeeDirectory() {
+                 <div className="space-y-3">
+                   <div>
+                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">New Department</label>
+-                    <select 
++                    <select
+                       value={transferDept}
+                       onChange={e => setTransferDept(e.target.value)}
+                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none"
+@@ -2078,7 +2500,7 @@ export function EmployeeDirectory() {
+                   </div>
+                   <div>
+                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">New Location</label>
+-                    <select 
++                    <select
+                       value={transferLoc}
+                       onChange={e => setTransferLoc(e.target.value)}
+                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none"
+@@ -2104,7 +2526,7 @@ export function EmployeeDirectory() {
+                 <div className="space-y-3">
+                   <div>
+                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">New Designation</label>
+-                    <select 
++                    <select
+                       value={promoteDesignation}
+                       onChange={e => setPromoteDesignation(e.target.value)}
+                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none"
+@@ -2117,7 +2539,7 @@ export function EmployeeDirectory() {
+                   </div>
+                   <div>
+                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">New Grade Level</label>
+-                    <select 
++                    <select
+                       value={promoteGrade}
+                       onChange={e => setPromoteGrade(e.target.value)}
+                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none"
+@@ -2142,8 +2564,8 @@ export function EmployeeDirectory() {
+                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Re-assign Reporting Manager</h3>
+                 <div>
+                   <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">New Manager UUID</label>
+-                  <input 
+-                    type="text" 
++                  <input
++                    type="text"
+                     placeholder="00000000-0000-0000-0000-000000000000"
+                     value={newManagerId}
+                     onChange={e => setNewManagerId(e.target.value)}
+@@ -2163,17 +2585,15 @@ export function EmployeeDirectory() {
+                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white text-rose-500">Terminate Digital Twin</h3>
+                 <div className="space-y-3">
+                   <div>
+-                    <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Exit Effective Date</label>
+-                    <input 
+-                      type="date" 
++                    <DatePicker
++                      label="Exit Effective Date"
+                       value={terminateDate}
+-                      onChange={e => setTerminateDate(e.target.value)}
+-                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none"
++                      onChange={setTerminateDate}
+                     />
+                   </div>
+                   <div>
+                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Reason for Termination</label>
+-                    <textarea 
++                    <textarea
+                       placeholder="Voluntary Resignation, Relocation, End of Contract..."
+                       value={terminateReason}
+                       onChange={e => setTerminateReason(e.target.value)}
+@@ -2189,11 +2609,199 @@ export function EmployeeDirectory() {
+               </div>
+             )}
+ 
++            {/* Archive Modal */}
++            {activeModal === 'archive' && (
++              <div className="space-y-4">
++                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white text-amber-500">Archive Digital Twin</h3>
++                <div className="space-y-3">
++                  <div>
++                    <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Reason for Archiving</label>
++                    <textarea
++                      placeholder="Redundancy, Voluntary Exit, Long Term Sabbatical..."
++                      value={archiveReason}
++                      onChange={e => setArchiveReason(e.target.value)}
++                      rows={3}
++                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none text-slate-800 dark:text-slate-200"
++                    />
++                  </div>
++                </div>
++                <div className="flex justify-end gap-3 pt-2">
++                  <button onClick={() => setActiveModal('none')} className="px-4 py-2 border border-slate-250 dark:border-slate-800 rounded-lg">Cancel</button>
++                  <button onClick={submitArchive} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg">Submit Archive</button>
++                </div>
++              </div>
++            )}
++
++            {/* Bulk Archive Modal */}
++            {activeModal === 'bulkArchive' && (
++              <div className="space-y-4">
++                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white text-amber-500">Bulk Archive Digital Twins</h3>
++                <p className="text-xs text-slate-500">You are about to archive {selectedIds.length} employee twin profiles.</p>
++                <div className="space-y-3">
++                  <div>
++                    <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Reason for Archiving</label>
++                    <textarea
++                      placeholder="Redundancy, End of Season Contract, Merger..."
++                      value={bulkArchiveReason}
++                      onChange={e => setBulkArchiveReason(e.target.value)}
++                      rows={3}
++                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none text-slate-800 dark:text-slate-200"
++                    />
++                  </div>
++                </div>
++                <div className="flex justify-end gap-3 pt-2">
++                  <button onClick={() => setActiveModal('none')} className="px-4 py-2 border border-slate-250 dark:border-slate-800 rounded-lg">Cancel</button>
++                  <button onClick={submitBulkArchive} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg">Submit Bulk Archive</button>
++                </div>
++              </div>
++            )}
++
++            {/* Bulk Reassign Manager Modal */}
++            {activeModal === 'bulkReassignManager' && (
++              <div className="space-y-4">
++                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Bulk Reassign Reporting Manager</h3>
++                <p className="text-xs text-slate-500">You are about to reassign the manager for {selectedIds.length} employee twin profiles.</p>
++
++                {bulkManagerError && (
++                  <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-lg p-3 text-rose-700 dark:text-rose-400 text-xs flex items-center gap-2">
++                    <AlertCircle className="w-4 h-4" />
++                    <span>{bulkManagerError}</span>
++                  </div>
++                )}
++
++                <div className="space-y-3">
++                  <div>
++                    <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">New Reporting Manager</label>
++                    <select
++                      value={bulkManagerId}
++                      onChange={e => setBulkManagerId(e.target.value)}
++                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none text-slate-800 dark:text-slate-200"
++                    >
++                      <option value="">Select Manager</option>
++                      {employees
++                        .filter(emp => emp.id && !selectedIds.includes(emp.id) && emp.employmentStatus !== 'TERMINATED')
++                        .map(emp => (
++                          <option key={emp.id} value={emp.id}>
++                            {emp.displayName} ({emp.employeeCode})
++                          </option>
++                        ))
++                      }
++                    </select>
++                  </div>
++                  <div>
++                    <DatePicker
++                      label="Effective Date"
++                      value={bulkManagerEffectiveDate}
++                      onChange={setBulkManagerEffectiveDate}
++                    />
++                  </div>
++                  <div>
++                    <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Reason for Reassignment</label>
++                    <textarea
++                      placeholder="Organization restructuring, Manager transfer..."
++                      value={bulkManagerReason}
++                      onChange={e => setBulkManagerReason(e.target.value)}
++                      rows={3}
++                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none text-slate-800 dark:text-slate-200"
++                    />
++                  </div>
++                </div>
++                <div className="flex justify-end gap-3 pt-2">
++                  <button
++                    onClick={() => setActiveModal('none')}
++                    disabled={isReassigning}
++                    className="px-4 py-2 border border-slate-250 dark:border-slate-800 rounded-lg text-xs"
++                  >
++                    Cancel
++                  </button>
++                  <button
++                    onClick={submitBulkReassignManager}
++                    disabled={isReassigning}
++                    className="bg-indigo-650 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2"
++                  >
++                    {isReassigning ? (
++                      <>
++                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
++                        Reassigning...
++                      </>
++                    ) : (
++                      'Apply Reassignment'
++                    )}
++                  </button>
++                </div>
++              </div>
++            )}
++
++            {/* Bulk Terminate Modal */}
++            {activeModal === 'bulkTerminate' && (
++              <div className="space-y-4">
++                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white text-rose-500">Bulk Terminate Digital Twins</h3>
++                <p className="text-xs text-slate-500">You are about to terminate {selectedIds.length} employee twin profiles.</p>
++
++                {bulkTerminateError && (
++                  <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-lg p-3 text-rose-700 dark:text-rose-400 text-xs flex items-center gap-2">
++                    <AlertCircle className="w-4 h-4" />
++                    <span>{bulkTerminateError}</span>
++                  </div>
++                )}
++
++                <div className="space-y-3">
++                  <div>
++                    <DatePicker
++                      label="Termination Date"
++                      value={bulkTerminateDate}
++                      onChange={setBulkTerminateDate}
++                    />
++                  </div>
++                  <div>
++                    <DatePicker
++                      label="Final Working Day"
++                      value={bulkFinalWorkingDay}
++                      onChange={setBulkFinalWorkingDay}
++                    />
++                  </div>
++                  <div>
++                    <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Reason for Termination</label>
++                    <textarea
++                      placeholder="Redundancy, Voluntary Resignation, End of Contract..."
++                      value={bulkTerminateReason}
++                      onChange={e => setBulkTerminateReason(e.target.value)}
++                      rows={3}
++                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 outline-none text-slate-800 dark:text-slate-200"
++                    />
++                  </div>
++                </div>
++                <div className="flex justify-end gap-3 pt-2">
++                  <button
++                    onClick={() => setActiveModal('none')}
++                    disabled={isTerminating}
++                    className="px-4 py-2 border border-slate-250 dark:border-slate-800 rounded-lg text-xs"
++                  >
++                    Cancel
++                  </button>
++                  <button
++                    onClick={submitBulkTerminate}
++                    disabled={isTerminating}
++                    className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2"
++                  >
++                    {isTerminating ? (
++                      <>
++                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
++                        Terminating...
++                      </>
++                    ) : (
++                      'Apply Terminations'
++                    )}
++                  </button>
++                </div>
++              </div>
++            )}
++
+             {/* Edit Identity Modal */}
+             {activeModal === 'editIdentity' && (
+               <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-2">
+                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Edit Personal & Identity Details</h3>
+-                
++
+                 <div className="space-y-3">
+                   <div className="grid grid-cols-2 gap-3">
+                     <div>
+@@ -2206,14 +2814,11 @@ export function EmployeeDirectory() {
+                     </div>
+                   </div>
+ 
+-                  <div className="grid grid-cols-2 gap-3">
+-                    <div>
+-                      <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Date of Birth</label>
+-                      <input type="date" value={editDOB} onChange={e => setEditDOB(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 outline-none" />
+-                    </div>
+-                    <div>
++                  <div className="grid grid-cols-2 gap-3 items-end">
++                    <DatePicker value={editDOB} onChange={setEditDOB} label="Date of Birth" />
++                    <div className="space-y-1">
+                       <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Gender</label>
+-                      <select value={editGender} onChange={e => setEditGender(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 outline-none">
++                      <select value={editGender} onChange={e => setEditGender(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 outline-none text-xs font-medium">
+                         <option value="MALE">Male</option>
+                         <option value="FEMALE">Female</option>
+                         <option value="OTHER">Other</option>
+@@ -2222,13 +2827,25 @@ export function EmployeeDirectory() {
+                   </div>
+ 
+                   <div className="grid grid-cols-2 gap-3">
+-                    <div>
++                    <div className="space-y-1">
+                       <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Personal Email</label>
+-                      <input type="email" value={editPersonalEmail} onChange={e => setEditPersonalEmail(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 outline-none font-mono" />
++                      <input type="email" value={editPersonalEmail} onChange={e => setEditPersonalEmail(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 outline-none font-mono text-xs" />
+                     </div>
+-                    <div>
+-                      <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Work Phone</label>
+-                      <input type="text" value={editWorkPhone} onChange={e => setEditWorkPhone(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 outline-none" />
++                    <PhoneInput
++                      label="Work Phone"
++                      value={editWorkPhone}
++                      onChange={setEditWorkPhone}
++                      error={editWorkPhoneError || undefined}
++                      setError={setEditWorkPhoneError}
++                    />
++                    <div className="col-span-2">
++                      <PhoneInput
++                        label="Personal Phone"
++                        value={editPersonalPhone}
++                        onChange={setEditPersonalPhone}
++                        error={editPersonalPhoneError || undefined}
++                        setError={setEditPersonalPhoneError}
++                      />
+                     </div>
+                   </div>
+ 
+@@ -2237,15 +2854,20 @@ export function EmployeeDirectory() {
+                     <div className="grid grid-cols-2 gap-3">
+                       <div>
+                         <label className="text-[10px] text-slate-400 uppercase block mb-1">Contact Name</label>
+-                        <input type="text" value={editEmergencyName} onChange={e => setEditEmergencyName(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg p-2 outline-none" />
++                        <input type="text" value={editEmergencyName} onChange={e => setEditEmergencyName(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg p-2 outline-none text-xs" />
+                       </div>
+                       <div>
+                         <label className="text-[10px] text-slate-400 uppercase block mb-1">Relation</label>
+-                        <input type="text" value={editEmergencyRelation} onChange={e => setEditEmergencyRelation(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg p-2 outline-none" />
++                        <input type="text" value={editEmergencyRelation} onChange={e => setEditEmergencyRelation(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg p-2 outline-none text-xs" />
+                       </div>
+                       <div className="col-span-2">
+-                        <label className="text-[10px] text-slate-400 uppercase block mb-1">Contact Phone</label>
+-                        <input type="text" value={editEmergencyPhone} onChange={e => setEditEmergencyPhone(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg p-2 outline-none" />
++                        <PhoneInput
++                          label="Contact Phone"
++                          value={editEmergencyPhone}
++                          onChange={setEditEmergencyPhone}
++                          error={editEmergencyPhoneError || undefined}
++                          setError={setEditEmergencyPhoneError}
++                        />
+                       </div>
+                     </div>
+                   </div>
+@@ -2315,8 +2937,11 @@ export function EmployeeDirectory() {
+                     <input type="text" placeholder="Amazon Web Services" value={newCertAuthority} onChange={e => setNewCertAuthority(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg p-2.5 outline-none" />
+                   </div>
+                   <div>
+-                    <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Expiry Date</label>
+-                    <input type="date" value={newCertExpiryDate} onChange={e => setNewCertExpiryDate(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg p-2.5 outline-none" />
++                    <DatePicker
++                      label="Expiry Date"
++                      value={newCertExpiryDate}
++                      onChange={setNewCertExpiryDate}
++                    />
+                   </div>
+                 </div>
+                 <div className="flex justify-end gap-3 pt-2">

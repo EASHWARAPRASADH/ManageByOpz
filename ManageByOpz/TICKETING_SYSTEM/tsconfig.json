@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "firebase/firestore": [
+        "./src/lib/firebase-stubs.ts"
+      ],
+      "firebase/auth": [
+        "./src/lib/firebase-stubs.ts"
+      ],
+      "firebase/app": [
+        "./src/lib/firebase-stubs.ts"
+      ],
+      "@firebase/firestore": [
+        "./src/lib/firebase-stubs.ts"
+      ]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  }
+}

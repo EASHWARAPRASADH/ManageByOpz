@@ -1,0 +1,16 @@
+-- V8: Add effective_date to Org DNA tables
+ALTER TABLE organizations ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE business_units ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE divisions ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE departments ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE sub_departments ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE locations ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE grades ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE bands ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE designations ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE employment_types ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE cost_centers ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE approval_matrices ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE positions ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE employee_twins ADD COLUMN effective_date TIMESTAMP NULL;
+ALTER TABLE employee_code_sequences ADD COLUMN effective_date TIMESTAMP NULL;
